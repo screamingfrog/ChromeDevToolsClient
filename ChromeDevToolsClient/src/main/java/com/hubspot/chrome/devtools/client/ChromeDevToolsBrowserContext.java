@@ -35,7 +35,7 @@ public class ChromeDevToolsBrowserContext extends ChromeDevToolsSession {
   public void attach() {
     if (sessionId == null) {
       final Target target = getTarget();
-      browserContextId = target.createBrowserContext();
+      browserContextId = target.createBrowserContext().browserContextId;
       final TargetID targetId = target.createTarget(
         BLANK_TAB,
         null, // left
@@ -44,9 +44,10 @@ public class ChromeDevToolsBrowserContext extends ChromeDevToolsSession {
         null, // height
         null, // windowState
         browserContextId
-      );
+      )
+        .targetId;
 
-      sessionId = target.attachToTarget(targetId, true);
+      sessionId = target.attachToTarget(targetId, true).sessionId;
     } else {
       LOG.warn("Already attached. sessionId={}", sessionId);
     }

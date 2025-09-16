@@ -37,7 +37,7 @@ public class BrowserContextExample {
         System.out.println("Loaded: " + URL);
 
         final BrowserContextID browserContextId = context.getBrowserContextId();
-        List<Cookie> cookies = context.getStorage().getCookies(browserContextId);
+        List<Cookie> cookies = context.getStorage().getCookies(browserContextId).cookies;
         for (var cookie : cookies) {
           System.out.println("cookie: " + cookie.getName() + "=" + cookie.getValue());
         }
