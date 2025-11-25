@@ -5,7 +5,7 @@
   <parent>
     <groupId>uk.co.screamingfrog</groupId>
     <artifactId>chromedevtools-parent</artifactId>
-    <version>138.0.7204.157-sf6</version>
+    <version>1.0.0-sf2</version>
   </parent>
 
   <artifactId>code-generation</artifactId>
