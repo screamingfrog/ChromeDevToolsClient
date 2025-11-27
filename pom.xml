@@ -9,7 +9,7 @@
   </parent>
   <groupId>uk.co.screamingfrog</groupId>
   <artifactId>chromedevtools-parent</artifactId>
-  <version>1.0.0-sf2</version>
+  <version>2.0.0-sf1</version>
   <packaging>pom</packaging>
 
   <modules>
@@ -19,7 +19,7 @@
   </modules>
 
   <properties>
-    <chromium.version>138.0.7204.157</chromium.version>
+    <chromium.version>142.0.7444.176</chromium.version>
     <v8.version>13.8.258.26</v8.version>
     <basepom.check.skip-spotbugs>true</basepom.check.skip-spotbugs>
   </properties>
