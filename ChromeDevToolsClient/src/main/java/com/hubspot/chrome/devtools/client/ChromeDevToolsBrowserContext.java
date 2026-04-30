@@ -7,7 +7,9 @@ import com.hubspot.chrome.devtools.client.core.target.SessionID;
 import com.hubspot.chrome.devtools.client.core.target.Target;
 import com.hubspot.chrome.devtools.client.core.target.TargetID;
 import java.net.URI;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +20,7 @@ public class ChromeDevToolsBrowserContext extends ChromeDevToolsSession {
     ChromeDevToolsBrowserContext.class
   );
   private static final String BLANK_TAB = "about:blank";
+  private final Set<String> excludeSessionIdMethods = new HashSet<>();
   private BrowserContextID browserContextId;
   private SessionID sessionId;
 
@@ -30,6 +33,10 @@ public class ChromeDevToolsBrowserContext extends ChromeDevToolsSession {
     super(uri, objectMapper, executorService, actionTimeoutMillis);
     this.browserContextId = null;
     this.sessionId = null;
+  }
+
+  public void excludeSessionId(final String method) {
+    excludeSessionIdMethods.add(method.toLowerCase());
   }
 
   public void attach() {
@@ -89,7 +96,8 @@ public class ChromeDevToolsBrowserContext extends ChromeDevToolsSession {
       Objects.equals(
         sessionId != null ? sessionId.getValue() : null,
         other.sessionId != null ? other.sessionId.getValue() : null
-      )
+      ) &&
+      Objects.equals(excludeSessionIdMethods, other.excludeSessionIdMethods)
     );
   }
 
@@ -98,7 +106,8 @@ public class ChromeDevToolsBrowserContext extends ChromeDevToolsSession {
     return Objects.hash(
       super.hashCode(),
       browserContextId != null ? browserContextId.getValue() : null,
-      sessionId != null ? sessionId.getValue() : null
+      sessionId != null ? sessionId.getValue() : null,
+      excludeSessionIdMethods
     );
   }
 
@@ -109,7 +118,10 @@ public class ChromeDevToolsBrowserContext extends ChromeDevToolsSession {
   }
 
   private void addBrowserContextSessionIdIfRequired(ChromeRequest request) {
-    if (sessionId != null) {
+    if (
+      sessionId != null &&
+      !excludeSessionIdMethods.contains(request.getMethod().toLowerCase())
+    ) {
       request.setSessionId(sessionId.getValue());
     }
   }
