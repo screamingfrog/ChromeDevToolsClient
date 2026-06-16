@@ -1,6 +1,8 @@
 package com.hubspot.chrome.devtools.client;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
@@ -23,7 +25,14 @@ public class ChromeDevToolsClientDefaults {
     TimeUnit.SECONDS,
     new LinkedTransferQueue<>()
   );
-  public static final ObjectMapper DEFAULT_OBJECT_MAPPER = new ObjectMapper()
+  public static final ObjectMapper DEFAULT_OBJECT_MAPPER = new ObjectMapper(
+    JsonFactory
+      .builder()
+      .streamReadConstraints(
+        StreamReadConstraints.builder().maxStringLength(50_000_000).build()
+      )
+      .build()
+  )
     .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
   static {
@@ -40,7 +49,7 @@ public class ChromeDevToolsClientDefaults {
   public static final HttpClient DEFAULT_HTTP_CLIENT = new NingHttpClient(
     HttpConfig.newBuilder().setObjectMapper(DEFAULT_OBJECT_MAPPER).build()
   );
-  public static final int DEFAULT_CHROME_ACTION_TIMEOUT_MILLIS = 60 * 1000;
+  public static final int DEFAULT_CHROME_ACTION_TIMEOUT_MILLIS = 30 * 1000;
   public static final int DEFAULT_HTTP_CONNECTION_RETRY_TIMEOUT_MILLIS = 5 * 1000;
   public static final boolean DEFAULT_START_NEW_TARGET = false;
 }
