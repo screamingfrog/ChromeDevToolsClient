@@ -65,7 +65,7 @@ public class ChromeWebSocketClient extends WebSocketClient {
         .<ChromeResponse>newBuilder()
         .retryIfResult(Objects::isNull)
         .withStopStrategy(StopStrategies.stopAfterDelay(actionTimeoutMillis))
-        .withWaitStrategy(WaitStrategies.exponentialWait(100, 10, TimeUnit.SECONDS))
+        .withWaitStrategy(WaitStrategies.exponentialWait(100, TimeUnit.MILLISECONDS))
         .build();
   }
 
