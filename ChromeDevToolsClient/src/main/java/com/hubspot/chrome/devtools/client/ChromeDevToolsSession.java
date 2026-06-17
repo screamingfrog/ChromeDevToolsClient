@@ -1,8 +1,6 @@
 package com.hubspot.chrome.devtools.client;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.rholder.retry.RetryException;
 import com.github.rholder.retry.Retryer;
@@ -70,7 +68,6 @@ import java.net.URI;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -183,7 +180,7 @@ public class ChromeDevToolsSession implements ChromeSessionCore {
     try {
       String json = objectMapper.writeValueAsString(request);
       LOG.trace("Sending request: {}", json);
-      websocket.send(json);
+      websocket.send(request.getId(), json);
     } catch (IOException e) {
       throw new ChromeDevToolsException(e);
     }

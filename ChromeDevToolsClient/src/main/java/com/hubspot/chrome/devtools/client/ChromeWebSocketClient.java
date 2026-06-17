@@ -1,13 +1,7 @@
 package com.hubspot.chrome.devtools.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.rholder.retry.RetryException;
-import com.github.rholder.retry.Retryer;
-import com.github.rholder.retry.RetryerBuilder;
-import com.github.rholder.retry.StopStrategies;
-import com.github.rholder.retry.WaitStrategies;
 import com.hubspot.chrome.devtools.base.ChromeResponse;
-import com.hubspot.chrome.devtools.base.ChromeResponseErrorBody;
 import com.hubspot.chrome.devtools.client.core.Event;
 import com.hubspot.chrome.devtools.client.core.EventType;
 import com.hubspot.chrome.devtools.client.core.target.SessionID;
@@ -16,9 +10,10 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,15 +26,14 @@ import org.slf4j.LoggerFactory;
 
 public class ChromeWebSocketClient extends WebSocketClient {
 
-  private final Logger LOG = LoggerFactory.getLogger(ChromeWebSocketClient.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ChromeWebSocketClient.class);
   private static final Map<String, EventType> EVENT_TYPES = Arrays
     .stream(EventType.values())
     .collect(Collectors.toMap(EventType::getType, Function.identity()));
 
-  private final Retryer<ChromeResponse> actionRetryer;
-
-  private final Map<Integer, ChromeResponseErrorBody> errorsReceived;
-  private final Map<Integer, ChromeResponse> messagesReceived;
+  private final long actionTimeoutMillis;
+  private final ConcurrentMap<Integer, CompletableFuture<ChromeResponse>> pendingResponses =
+    new ConcurrentHashMap<>();
   private final ObjectMapper objectMapper;
   private final Map<String, ChromeEventListener> chromeEventListeners;
   private final ExecutorService executorService;
@@ -55,18 +49,7 @@ public class ChromeWebSocketClient extends WebSocketClient {
     this.objectMapper = objectMapper;
     this.chromeEventListeners = chromeEventListeners;
     this.executorService = executorService;
-    this.errorsReceived = new HashMap<>();
-    this.messagesReceived = new HashMap<>();
-
-    // The timeout here is merely a safety net in case the user doesn't complete the futures
-    // this returns with their own timeout.
-    this.actionRetryer =
-      RetryerBuilder
-        .<ChromeResponse>newBuilder()
-        .retryIfResult(Objects::isNull)
-        .withStopStrategy(StopStrategies.stopAfterDelay(actionTimeoutMillis))
-        .withWaitStrategy(WaitStrategies.exponentialWait(100, TimeUnit.MILLISECONDS))
-        .build();
+    this.actionTimeoutMillis = actionTimeoutMillis;
   }
 
   @Override
@@ -86,7 +69,14 @@ public class ChromeWebSocketClient extends WebSocketClient {
   @Override
   public void onClose(int code, String reason, boolean remote) {
     LOG.debug("Disconnected from session ({}: {})", code, reason);
-    messagesReceived.clear();
+
+    pendingResponses.forEach((id, future) ->
+      future.completeExceptionally(
+        new ChromeDevToolsException("Websocket disconnected before response " + id)
+      )
+    );
+
+    pendingResponses.clear();
   }
 
   @Override
@@ -96,7 +86,15 @@ public class ChromeWebSocketClient extends WebSocketClient {
     try {
       ChromeResponse response = objectMapper.readValue(message, ChromeResponse.class);
       if (response.isResponse()) {
-        messagesReceived.put(response.getId(), response);
+        CompletableFuture<ChromeResponse> future = pendingResponses.remove(
+          response.getId()
+        );
+
+        if (future != null) {
+          future.complete(response);
+        } else {
+          LOG.debug("Received response for unknown id: {}", response.getId());
+        }
       } else if (response.isEvent()) {
         Event event = objectMapper.readValue(message, Event.class);
         SessionID sessionId = response.getSessionId() == null
@@ -107,8 +105,20 @@ public class ChromeWebSocketClient extends WebSocketClient {
           executorService.submit(() -> eventListener.onEvent(sessionId, type, event));
         }
       } else if (response.isError()) {
-        LOG.error(response.getError().toString());
-        errorsReceived.put(response.getId(), response.getError());
+        LOG.error("{}", response.getError());
+        CompletableFuture<ChromeResponse> future = pendingResponses.remove(
+          response.getId()
+        );
+        if (future != null) {
+          future.completeExceptionally(
+            new ChromeDevToolsException(
+              response.getError().getMessage(),
+              response.getError().getCode()
+            )
+          );
+        } else {
+          LOG.debug("Received error for unknown id: {}", response.getId());
+        }
       }
     } catch (IOException ioe) {
       LOG.warn("Could not parse response from chrome. Ignoring this response.", ioe);
@@ -126,24 +136,41 @@ public class ChromeWebSocketClient extends WebSocketClient {
   @Override
   public void onError(Exception ex) {
     LOG.error("Websocket exception for session", ex);
+
+    pendingResponses.forEach((id, future) -> future.completeExceptionally(ex));
+
+    pendingResponses.clear();
+  }
+
+  void send(int id, String json) {
+    CompletableFuture<ChromeResponse> future = new CompletableFuture<>();
+    pendingResponses.put(id, future);
+    try {
+      send(json);
+    } catch (Exception e) {
+      pendingResponses.remove(id);
+      future.completeExceptionally(e);
+      throw e;
+    }
   }
 
   public ChromeResponse getResponse(int id) {
+    CompletableFuture<ChromeResponse> future = pendingResponses.get(id);
+    if (future == null) {
+      throw new ChromeDevToolsException("No pending request for id " + id);
+    }
+
     try {
-      ChromeResponse response = actionRetryer.call(() -> {
-        if (errorsReceived.containsKey(id)) {
-          ChromeResponseErrorBody error = errorsReceived.get(id);
-          throw new ChromeDevToolsException(error.getMessage(), error.getCode());
-        }
-        if (!isOpen()) {
-          throw new ChromeDevToolsException("Websocket is not connected");
-        }
-        return messagesReceived.get(id);
-      });
-      messagesReceived.remove(id);
-      return response;
-    } catch (ExecutionException | RetryException e) {
+      return future.get(actionTimeoutMillis, TimeUnit.MILLISECONDS);
+    } catch (ExecutionException e) {
+      if (e.getCause() instanceof ChromeDevToolsException) {
+        throw (ChromeDevToolsException) e.getCause();
+      }
+      throw new ChromeDevToolsException(e.getCause());
+    } catch (Exception e) {
       throw new ChromeDevToolsException(e);
+    } finally {
+      pendingResponses.remove(id);
     }
   }
 }
