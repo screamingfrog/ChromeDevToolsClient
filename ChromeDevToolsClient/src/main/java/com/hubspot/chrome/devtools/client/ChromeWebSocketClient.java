@@ -86,9 +86,7 @@ public class ChromeWebSocketClient extends WebSocketClient {
     try {
       ChromeResponse response = objectMapper.readValue(message, ChromeResponse.class);
       if (response.isResponse()) {
-        CompletableFuture<ChromeResponse> future = pendingResponses.remove(
-          response.getId()
-        );
+        CompletableFuture<ChromeResponse> future = pendingResponses.get(response.getId());
 
         if (future != null) {
           future.complete(response);
@@ -106,9 +104,7 @@ public class ChromeWebSocketClient extends WebSocketClient {
         }
       } else if (response.isError()) {
         LOG.error("{}", response.getError());
-        CompletableFuture<ChromeResponse> future = pendingResponses.remove(
-          response.getId()
-        );
+        CompletableFuture<ChromeResponse> future = pendingResponses.get(response.getId());
         if (future != null) {
           future.completeExceptionally(
             new ChromeDevToolsException(
